@@ -126,8 +126,8 @@ def main():
     df = load_data()
     df = drop_duplicates(df)
     df = drop_id_columns(df)
-    df = binning(df)               # IMPORTANT: binning dilakukan sebelum scaling
-    df = encode_categorical(df)    # lakukan encode sebelum scaling agar label tidak ikut distorsi
+    df = binning(df)               
+    df = encode_categorical(df)    
     df = handle_missing(df)
     df = handle_outliers(df)
     df = feature_scaling(df)
