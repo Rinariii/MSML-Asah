@@ -1,55 +1,61 @@
 import os
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+import joblib
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import PCA
 
 RAW_PATH = r"../loan_dataset_raw/bank_transactions_data.csv"
 OUT_DIR = "preprocessing"
-OUT_FILE = f"{OUT_DIR}/loan_clean.csv"
-
+OUT_FILE = os.path.join(OUT_DIR, "loan_clean.csv")
 
 def load_data():
     if not os.path.exists(RAW_PATH):
         raise FileNotFoundError(f"Dataset tidak ditemukan di lokasi: {RAW_PATH}")
     df = pd.read_csv(RAW_PATH)
-    print("Dataset Loaded:", df.shape)
+    print(f"Dataset Loaded: {df.shape}")
     return df
 
-
-def drop_duplicates(df):
+def process_data(df):
     df = df.copy()
+
+    # 1. Menghapus Data Duplikat
+    print("1. Menghapus Duplikat...")
     df.drop_duplicates(inplace=True)
-    return df
 
+    # 2. Membersihkan Kolom ID
+    print("2. Menghapus Kolom ID...")
+    df.drop('IP Address', axis=1, inplace=True, errors='ignore')
+    id_columns = [col for col in df.columns if 'id' in col.lower()]
+    df.drop(columns=id_columns, inplace=True)
 
-def drop_id_columns(df):
-    df = df.copy()
+    # 3. Impute Data Kosong (Median)
+    print("3. Handling Missing Values...")
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    for col in numeric_cols:
+        median_value = df[col].median()
+        df[col] = df[col].fillna(median_value)
 
-    if "IP Address" in df.columns:
-        df.drop("IP Address", axis=1, inplace=True)
+    # 4. Deteksi dan Penanganan Outlier
+    print("4. Handling Outliers...")
+    # Menggunakan numeric_cols yang sama
+    for col in numeric_cols:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+        batas_bawah = Q1 - 1.5 * IQR
+        batas_atas = Q3 + 1.5 * IQR
 
-    id_columns = [col for col in df.columns if "id" in col.lower()]
-    df.drop(columns=id_columns, inplace=True, errors="ignore")
-    print("Kolom ID di-drop:", id_columns)
+        median = df[col].median()
+        # Winsorizing/Imputation
+        df[col] = np.where((df[col] < batas_bawah) | (df[col] > batas_atas), median, df[col])
 
-    return df
-
-
-def binning(df):
-    df = df.copy()
-
+    # 5. Binning
+    print("5. Binning Data...")
     if "CustomerAge" in df.columns:
         bins_age = [0, 18, 40, 60, np.inf]
         labels_age = ["Remaja", "Dewasa Muda", "Dewasa", "Lansia"]
-
-        df["Age_Binned"] = pd.cut(
-            df["CustomerAge"],
-            bins=bins_age,
-            labels=labels_age,
-            include_lowest=True
-        )
-
-        df["Age_Encoded"] = LabelEncoder().fit_transform(df["Age_Binned"].astype(str))
+        df["Age_Binned"] = pd.cut(df["CustomerAge"], bins=bins_age, labels=labels_age)
 
     if "TransactionAmount" in df.columns:
         df["Amount_Binned"] = pd.qcut(
@@ -59,81 +65,43 @@ def binning(df):
             duplicates="drop"
         )
 
-        df["Amount_Encoded"] = LabelEncoder().fit_transform(df["Amount_Binned"].astype(str))
-
-    return df
-
-
-def encode_categorical(df):
-    df = df.copy()
-    categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
+    # 6. Encoding Data Kategorikal
+    print("6. Encoding Kategorikal...")
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     encoder = LabelEncoder()
-
     for col in categorical_cols:
         df[col] = encoder.fit_transform(df[col].astype(str))
 
     return df
 
+def scale_and_pca(df):
+    print("7. Scaling & PCA...")
+    
+    X = df.copy()
 
-def feature_scaling(df):
-    df = df.copy()
-    numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    scaler = MinMaxScaler()
-    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    # B. PCA
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_scaled)
+    
+    return X_pca
 
-    return df
-
-
-def handle_missing(df):
-    df = df.copy()
-    numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns
-
-    for col in numeric_cols:
-        df[col] = df[col].fillna(df[col].median())
-
-    return df
-
-
-def handle_outliers(df):
-    df = df.copy()
-    numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns
-
-    for col in numeric_cols:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-
-        lower = Q1 - 1.5 * IQR
-        upper = Q3 + 1.5 * IQR
-
-        median = df[col].median()
-
-        df[col] = np.where((df[col] < lower) | (df[col] > upper), median, df[col])
-
-    return df
-
-
-def save(df):
+def save_result(X_pca):
+    df_pca = pd.DataFrame(data=X_pca, columns=['PC1', 'PC2'])
     if not os.path.exists(OUT_DIR):
         os.makedirs(OUT_DIR)
 
-    df.to_csv(OUT_FILE, index=False)
-    print("Saved:", OUT_FILE)
-
+    df_pca.to_csv(OUT_FILE, index=False)
+    print(f"Preprocessing Selesai. Data tersimpan di: {OUT_FILE}")
 
 def main():
-    df = load_data()
-    df = drop_duplicates(df)
-    df = drop_id_columns(df)
-    df = binning(df)               
-    df = encode_categorical(df)    
-    df = handle_missing(df)
-    df = handle_outliers(df)
-    df = feature_scaling(df)
-    save(df)
-    print("Preprocessing Selesai.")
-
+    # Pipeline Eksekusi
+    df = load_data()      
+    df = process_data(df)
+    X_pca = scale_and_pca(df)
+    save_result(X_pca)\
 
 if __name__ == "__main__":
     main()
