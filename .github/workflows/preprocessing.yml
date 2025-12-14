@@ -18,22 +18,17 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12.7'
-        
+
     - name: Install dependencies
       run: |
         pip install pandas numpy scikit-learn 
-
-    - name: Check File Structure
-      run: |
-        ls -R
 
     - name: Run preprocessing script
       run: |
         python preprocessing/"automate_Steven Lie Wibowo.py"
 
-    - name: Upload artifact
+    - name: Upload Preprocessed Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: loan_clean
-        path: |
-          preprocessing/loan_clean.csv
+        path: preprocessing/
