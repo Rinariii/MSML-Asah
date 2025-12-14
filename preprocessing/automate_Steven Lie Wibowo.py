@@ -18,31 +18,33 @@ def load_data():
     print(f"Dataset Loaded: {df.shape}")
     return df
 
-def process_data(df):
-    df = df.copy()
-    
-    # 1. Cleaning Basic
+def run_preprocessing(df):    
+    # 1. Menghapus Data Duplikat
     df.drop_duplicates(inplace=True)
+
+    # 2. Membersihkan Kolom ID
     df.drop('IP Address', axis=1, inplace=True, errors='ignore')
     id_columns = [col for col in df.columns if 'id' in col.lower()]
     df.drop(columns=id_columns, inplace=True)
-    
-    # 2. Impute Missing Values
+
+    # 3. Impute Data Kosong
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
     for col in numeric_cols:
-        df[col] = df[col].fillna(df[col].median())
+        median_value = df[col].median()
+        df[col] = df[col].fillna(median_value)
 
-    # 3. Handle Outliers
+    # 4. Deteksi dan Penanganan Outlier
     for col in numeric_cols:
         Q1 = df[col].quantile(0.25)
         Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
-        lower = Q1 - 1.5 * IQR
-        upper = Q3 + 1.5 * IQR
-        median = df[col].median()
-        df[col] = np.where((df[col] < lower) | (df[col] > upper), median, df[col])
+        batas_bawah = Q1 - 1.5 * IQR
+        batas_atas = Q3 + 1.5 * IQR
 
-    # 4. Binning
+        median = df[col].median()
+        df[col] = np.where((df[col] < batas_bawah) | (df[col] > batas_atas), median, df[col])
+
+    # 5. Binning
     if "CustomerAge" in df.columns:
         bins_age = [0, 18, 40, 60, np.inf]
         labels_age = ["Remaja", "Dewasa Muda", "Dewasa", "Lansia"]
@@ -50,45 +52,39 @@ def process_data(df):
 
     if "TransactionAmount" in df.columns:
         df["Amount_Binned"] = pd.qcut(
-            df["TransactionAmount"], q=4,
+            df["TransactionAmount"],
+            q=4,
             labels=["Kecil", "Sedang", "Besar", "Sangat Besar"],
             duplicates="drop"
         )
 
-    # 5. Encoding
+    # 6. Encoding Data Kategorikal
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     encoder = LabelEncoder()
     for col in categorical_cols:
         df[col] = encoder.fit_transform(df[col].astype(str))
 
-    return df
+    X = df.copy() 
 
-def scale_and_pca(df):
-
-    X = df.select_dtypes(include=[np.number]).copy()
-
+    # Normalisasi
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
+    # PCA
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
+    
+    return df 
 
-    return X_pca
+def save_result(df):
 
-def save_result(X_pca):
-    df_pca = pd.DataFrame(data=X_pca, columns=['PC1', 'PC2'])
-    df_pca = df_pca.astype(float)
-
-    # Simpan CSV
-    df_pca.to_csv(OUT_FILE, index=False)
-    print(f"File CSV BERHASIL disimpan di: {OUT_FILE}")
-
+    df.to_csv(OUT_FILE, index=False)
+    
 def main():
     try:
         df = load_data()
-        df = process_data(df)
-        X_pca = scale_and_pca(df)
-        save_result(X_pca)
+        df_processed = run_preprocessing(df)
+        save_result(df_processed)
     except Exception as e:
         print(f"ERROR: {e}")
         exit(1)
